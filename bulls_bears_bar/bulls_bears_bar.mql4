@@ -1,0 +1,304 @@
+#property strict
+
+#property indicator_chart_window
+
+#property indicator_buffers 8
+#property indicator_type1 DRAW_HISTOGRAM
+#property indicator_type2 DRAW_HISTOGRAM
+#property indicator_type3 DRAW_HISTOGRAM
+#property indicator_type4 DRAW_HISTOGRAM
+#property indicator_type5 DRAW_HISTOGRAM
+#property indicator_type6 DRAW_HISTOGRAM
+#property indicator_type7 DRAW_HISTOGRAM
+#property indicator_type8 DRAW_HISTOGRAM
+#property indicator_width1 20
+#property indicator_width2 20
+#property indicator_width3 20
+#property indicator_width4 20
+#property indicator_width5 20
+#property indicator_width6 20
+#property indicator_width7 20
+#property indicator_width8 20
+
+#property indicator_color1 C'0,132,132'
+#property indicator_color2 C'0,193,193'
+#property indicator_color3 C'32,255,255'
+#property indicator_color4 C'164,255,255'
+
+#property indicator_color5 C'117,0,117'
+#property indicator_color6 C'196,0,196'
+#property indicator_color7 C'255,53,255'
+#property indicator_color8 C'255,172,255'
+
+#define ZERO_CLEAR 0
+
+// ------------------------------------------------------
+
+enum bulls_bears_price {
+    CLOSE       = 0,
+    OPEN        = 1,
+    HEIGHT      = 2,
+    LOW         = 3,
+    MEDIAN      = 4,
+    TYPICAL     = 5, 
+    WEIGHTED    = 6
+};
+
+// ------------------------------------------------------
+
+extern int BullBearPeriod = 14;
+extern bulls_bears_price BullBearPrice = 0;
+
+extern bool IsVolumeCheck = true;
+
+extern int BarDirectionX = 0;
+extern int BarWidth = 5;
+
+// ------------------------------------------------------
+
+static double sBullsPowerBuffers1[];
+static double sBullsPowerBuffers2[];
+static double sBullsPowerBuffers3[];
+static double sBullsPowerBuffers4[];
+
+static double sBearsPowserBuffer1[];
+static double sBearsPowserBuffer2[];
+static double sBearsPowserBuffer3[];
+static double sBearsPowserBuffer4[];
+
+static double sBullsPowerBundle;
+static double sBearsPowerBundle;
+
+static long sNowVolumeBundle;
+static long sOldVolumeBundle;
+
+// ------------------------------------------------------
+
+static double sTopPrice = 0; 
+static datetime sTopDatetime = 0; 
+static int sTopWindow = 0; 
+
+static double sBottomPrice = 0; 
+static datetime sBottomDatetime = 0; 
+static int sBottomWindow = 0; 
+
+static double sTopPricePrev = 0;
+static double sBottomPricePrev = 0;
+
+// ------------------------------------------------------
+
+int init()
+{
+    IndicatorBuffers(8);
+    IndicatorDigits(Digits);
+
+    // Bulls
+    SetIndexBuffer(0,   sBullsPowerBuffers1);
+    SetIndexStyle(0,    DRAW_HISTOGRAM);
+    SetIndexBuffer(1,   sBullsPowerBuffers2);
+    SetIndexStyle(1,    DRAW_HISTOGRAM);
+    SetIndexBuffer(2,   sBullsPowerBuffers3);
+    SetIndexStyle(2,    DRAW_HISTOGRAM);
+    SetIndexBuffer(3,   sBullsPowerBuffers4);
+    SetIndexStyle(3,    DRAW_HISTOGRAM);
+
+    // Bears
+    SetIndexBuffer(4,   sBearsPowserBuffer1);
+    SetIndexStyle(4,    DRAW_HISTOGRAM);
+    SetIndexBuffer(5,   sBearsPowserBuffer2);
+    SetIndexStyle(5,    DRAW_HISTOGRAM);
+    SetIndexBuffer(6,   sBearsPowserBuffer3);
+    SetIndexStyle(6,    DRAW_HISTOGRAM);
+    SetIndexBuffer(7,   sBearsPowserBuffer4);
+    SetIndexStyle(7,    DRAW_HISTOGRAM);
+
+    ChartXYToTimePrice(0, BarDirectionX,    BarDirectionX,              sTopWindow,      sTopDatetime,    sTopPrice);
+    ChartXYToTimePrice(0, BarDirectionX,    BarDirectionX + BarWidth,   sBottomWindow,   sBottomDatetime, sBottomPrice);
+
+    return INIT_SUCCEEDED;
+}
+
+int start()
+{
+    ChartXYToTimePrice(0, BarDirectionX,    BarDirectionX,              sTopWindow,      sTopDatetime,    sTopPrice);
+    ChartXYToTimePrice(0, BarDirectionX,    BarDirectionX + BarWidth,   sBottomWindow,   sBottomDatetime, sBottomPrice);
+
+    int period;
+    int level;
+    int countedBars;
+    int limit;
+    int i;
+    double ratio;
+    bool isVolumeUp;
+
+    ratio = 0;
+    level = 10;
+    isVolumeUp = false;
+
+    period = 1;
+    if (BullBearPeriod < 1) {
+        period = 1;
+    }
+    else {
+        period = BullBearPeriod;
+    }
+
+    countedBars = IndicatorCounted();
+
+    if (sTopPrice != sTopPricePrev || sBottomPrice != sBottomPricePrev) {
+        countedBars = 0;
+
+        sTopPricePrev = sTopPrice;
+        sBottomPricePrev = sBottomPrice;
+
+        isUpdatedDirectionXY_debug = true;
+    }
+
+    limit = Bars - countedBars - 1;
+
+    for (i = limit; i >= 0; i--) {
+        sBullsPowerBuffers1[i] = ZERO_CLEAR;
+        sBullsPowerBuffers2[i] = ZERO_CLEAR;
+        sBullsPowerBuffers3[i] = ZERO_CLEAR;
+        sBullsPowerBuffers4[i] = ZERO_CLEAR;
+        sBearsPowserBuffer1[i] = ZERO_CLEAR;
+        sBearsPowserBuffer2[i] = ZERO_CLEAR;
+        sBearsPowserBuffer3[i] = ZERO_CLEAR;
+        sBearsPowserBuffer4[i] = ZERO_CLEAR;
+
+        sBullsPowerBundle = iBullsPower(
+                NULL,
+                0,
+                period,
+                (int)BullBearPrice,
+                i
+            );
+        if (sBullsPowerBundle == INVALID_HANDLE) {
+            continue;
+        }
+
+        sBearsPowerBundle = iBearsPower(
+                NULL,
+                0, 
+                BullBearPeriod,
+                (int)BullBearPrice,
+                i
+            );
+        if (sBearsPowerBundle == INVALID_HANDLE) {
+            continue;
+        }
+
+        if (IsVolumeCheck) {
+            sNowVolumeBundle = iVolume(
+                    NULL,
+                    0,
+                    i
+                );
+            if (sNowVolumeBundle == INVALID_HANDLE) {
+                continue;
+            }
+
+            sOldVolumeBundle = iVolume(
+                    NULL,
+                    0,
+                    i + 1
+                );
+            if (sOldVolumeBundle == INVALID_HANDLE) {
+                continue;
+            }
+
+            isVolumeUp = sNowVolumeBundle > sOldVolumeBundle;
+        }
+        else {
+            isVolumeUp = true;
+        }
+
+        if (sBullsPowerBundle < 0) {
+            sBullsPowerBundle *= -1;
+        }
+        if (sBearsPowerBundle < 0) {
+            sBearsPowerBundle *= -1;
+        }
+
+        if (sBullsPowerBundle > sBearsPowerBundle) {
+            ratio = sBearsPowerBundle / sBullsPowerBundle;
+            ratio *= 100;
+
+            if (ratio < 40.0) {
+                sBullsPowerBuffers2[i] = sTopPrice;
+                sBullsPowerBuffers1[i] = sBottomPrice;
+            }
+            else if (ratio < 60.0) {
+                if (isVolumeUp) {
+                    sBullsPowerBuffers1[i] = sTopPrice;
+                    sBullsPowerBuffers2[i] = sBottomPrice;
+                }
+                else {
+                    sBullsPowerBuffers2[i] = sTopPrice;
+                    sBullsPowerBuffers1[i] = sBottomPrice;
+                }
+            }
+            else if (ratio < 80.0) {
+                if (isVolumeUp) {
+                    sBullsPowerBuffers4[i] = sTopPrice;
+                    sBullsPowerBuffers3[i] = sBottomPrice;
+                }
+                else {
+                    sBullsPowerBuffers1[i] = sTopPrice;
+                    sBullsPowerBuffers2[i] = sBottomPrice;
+                }
+            }
+            else {
+                if (isVolumeUp) {
+                    sBullsPowerBuffers3[i] = sTopPrice;
+                    sBullsPowerBuffers4[i] = sBottomPrice;
+                }
+                else {
+                    sBullsPowerBuffers4[i] = sTopPrice;
+                    sBullsPowerBuffers3[i] = sBottomPrice;
+                }
+            }
+        }
+        else {
+            ratio = sBullsPowerBundle / sBearsPowerBundle;
+            ratio *= 100;
+
+            if (ratio < 40.0) {
+                sBearsPowserBuffer2[i] = sTopPrice;
+                sBearsPowserBuffer1[i] = sBottomPrice;
+            }
+            else if (ratio < 60.0) {
+                if (isVolumeUp) {
+                    sBearsPowserBuffer1[i] = sTopPrice;
+                    sBearsPowserBuffer2[i] = sBottomPrice;
+                }
+                else {
+                    sBearsPowserBuffer2[i] = sTopPrice;
+                    sBearsPowserBuffer1[i] = sBottomPrice;
+                }
+            }
+            else if (ratio < 80.0) {
+                if (isVolumeUp) {
+                    sBearsPowserBuffer4[i] = sTopPrice;
+                    sBearsPowserBuffer3[i] = sBottomPrice;
+                }
+                else {
+                    sBearsPowserBuffer1[i] = sTopPrice;
+                    sBearsPowserBuffer2[i] = sBottomPrice;
+                }
+            }
+            else {
+                if (isVolumeUp) {
+                    sBearsPowserBuffer3[i] = sTopPrice;
+                    sBearsPowserBuffer4[i] = sBottomPrice;
+                }
+                else {
+                    sBearsPowserBuffer4[i] = sTopPrice;
+                    sBearsPowserBuffer3[i] = sBottomPrice;
+                }
+            }
+        }
+    }
+
+    return INIT_SUCCEEDED;
+}
